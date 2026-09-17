@@ -145,6 +145,7 @@ const getQuotations = async (req, res, next) => {
       include: {
         enquiry: true,
         customer: true,
+        salesOrder: true,
         quotationItems: {
           include: {
             product: true,
@@ -182,6 +183,7 @@ const getQuotationById = async (req, res, next) => {
       include: {
         enquiry: true,
         customer: true,
+        salesOrder: true,
         quotationItems: {
           include: {
             product: true,
