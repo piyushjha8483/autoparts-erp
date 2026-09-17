@@ -10,6 +10,10 @@ export default function EnquiriesPage() {
   const [error, setError] = useState('');
   const { isSales } = useAuth();
 
+  // Accordion state: tracks which enquiry row is expanded and its fetched detail
+  const [expandedId, setExpandedId] = useState(null);
+  const [detailData, setDetailData] = useState({});     // { [enquiryId]: { loading, error, data } }
+
   const [showModal, setShowModal] = useState(false);
   
   // New Customer Form
@@ -73,6 +77,28 @@ export default function EnquiriesPage() {
     setFormData({ ...formData, items: [...formData.items, { productId: '', quantity: 1 }] });
   };
 
+  // Toggle accordion: collapse if same row clicked, else fetch + expand
+  const handleRowClick = async (id) => {
+    if (expandedId === id) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(id);
+    // Only fetch if we don't already have the data cached
+    if (detailData[id]) return;
+
+    setDetailData(prev => ({ ...prev, [id]: { loading: true, error: null, data: null } }));
+    try {
+      const res = await api.get(`/enquiries/${id}`);
+      setDetailData(prev => ({ ...prev, [id]: { loading: false, error: null, data: res.data.enquiry } }));
+    } catch (err) {
+      setDetailData(prev => ({
+        ...prev,
+        [id]: { loading: false, error: err.response?.data?.message || 'Failed to load enquiry details', data: null }
+      }));
+    }
+  };
+
   if (loading) return <div>Loading enquiries...</div>;
 
   return (
@@ -104,18 +130,108 @@ export default function EnquiriesPage() {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {enquiries.map(enq => (
-              <tr key={enq.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{enq.enquiryNumber}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{enq.customer?.companyName}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(enq.enquiryDate).toLocaleDateString()}</td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                    {enq.status}
-                  </span>
-                </td>
-              </tr>
-            ))}
+            {enquiries.map(enq => {
+              const isExpanded = expandedId === enq.id;
+              const detail = detailData[enq.id];
+              return (
+                <React.Fragment key={enq.id}>
+                  {/* Main row — clicking anywhere on it toggles the accordion */}
+                  <tr
+                    onClick={() => handleRowClick(enq.id)}
+                    className="cursor-pointer hover:bg-gray-50 transition-colors"
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-700 underline underline-offset-2">
+                      {enq.enquiryNumber}
+                      <span className="ml-2 text-gray-400 text-xs">{isExpanded ? '▲' : '▼'}</span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{enq.customer?.companyName}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(enq.enquiryDate).toLocaleDateString()}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                        {enq.status}
+                      </span>
+                    </td>
+                  </tr>
+
+                  {/* Accordion detail row */}
+                  {isExpanded && (
+                    <tr>
+                      <td colSpan={4} className="px-6 pb-4 pt-0 bg-indigo-50">
+                        {detail?.loading && (
+                          <p className="text-sm text-gray-500 py-3">Loading details...</p>
+                        )}
+                        {detail?.error && (
+                          <p className="text-sm text-red-600 py-3">{detail.error}</p>
+                        )}
+                        {detail?.data && (() => {
+                          const d = detail.data;
+                          return (
+                            <div className="border border-indigo-200 rounded-lg bg-white p-4 mt-2 space-y-3">
+                              {/* Header fields */}
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                                <div>
+                                  <p className="text-xs font-semibold text-gray-400 uppercase">Enquiry #</p>
+                                  <p className="font-medium text-gray-800">{d.enquiryNumber}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs font-semibold text-gray-400 uppercase">Customer</p>
+                                  <p className="font-medium text-gray-800">{d.customer?.companyName}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs font-semibold text-gray-400 uppercase">Enquiry Date</p>
+                                  <p className="font-medium text-gray-800">{new Date(d.enquiryDate).toLocaleDateString()}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs font-semibold text-gray-400 uppercase">Required Date</p>
+                                  <p className="font-medium text-gray-800">
+                                    {d.requiredDate ? new Date(d.requiredDate).toLocaleDateString() : '—'}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Notes */}
+                              {d.notes && (
+                                <div className="text-sm">
+                                  <p className="text-xs font-semibold text-gray-400 uppercase">Notes</p>
+                                  <p className="text-gray-700 mt-1">{d.notes}</p>
+                                </div>
+                              )}
+
+                              {/* Items table */}
+                              {d.enquiryItems?.length > 0 && (
+                                <div>
+                                  <p className="text-xs font-semibold text-gray-400 uppercase mb-2">Products / Items</p>
+                                  <table className="min-w-full text-sm border border-gray-200 rounded">
+                                    <thead className="bg-gray-100">
+                                      <tr>
+                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Part Code</th>
+                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Part Name</th>
+                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">Category</th>
+                                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">Quantity</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                      {d.enquiryItems.map(item => (
+                                        <tr key={item.id} className="hover:bg-gray-50">
+                                          <td className="px-3 py-2 text-gray-700 font-mono">{item.product?.partCode}</td>
+                                          <td className="px-3 py-2 text-gray-800 font-medium">{item.product?.partName}</td>
+                                          <td className="px-3 py-2 text-gray-500">{item.product?.category}</td>
+                                          <td className="px-3 py-2 text-right font-semibold">{parseFloat(item.quantity)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
